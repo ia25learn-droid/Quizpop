@@ -14,6 +14,11 @@ export default function Home() {
   const [joined, setJoined] = useState(false);
   const [nickname, setNickname] = useState("");
   const [participantLobby, setParticipantLobby] = useState(false);
+  const [participants, setParticipants] = useState<{id:string;nickname:string}[]>([]);
+  const [roomError, setRoomError] = useState("");
+  const [joiningRoom, setJoiningRoom] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [playerId] = useState(() => crypto.randomUUID());
   const [selected, setSelected] = useState<number | null>(null);
   const [hostMode, setHostMode] = useState(false);
   const [lobby, setLobby] = useState(false);
@@ -36,6 +41,68 @@ export default function Home() {
       setJoined(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!lobby) return;
+    const refresh = async () => {
+      const response = await fetch(`/.netlify/functions/room?code=${roomCode}`, { cache: "no-store" });
+      if (response.ok) setParticipants((await response.json()).participants || []);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 1500);
+    return () => window.clearInterval(timer);
+  }, [lobby]);
+
+  useEffect(() => {
+    if (!participantLobby) return;
+    const refresh = async () => {
+      const response = await fetch(`/.netlify/functions/room?code=${code}&view=status`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.status === "started") setGameStarted(true);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 4000);
+    return () => window.clearInterval(timer);
+  }, [participantLobby, code]);
+
+  async function openHostLobby() {
+    setRoomError("");
+    const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create", code: roomCode }) });
+    if (!response.ok && location.hostname !== "localhost") { setRoomError("Could not create the live room. Please try again."); return; }
+    setHostMode(false); setParticipants([]); setLobby(true);
+  }
+
+  async function postGame() {
+    const invalidIndex = questions.findIndex(question => !question.text.trim() || question.answers.filter((answer, index) => answer.trim() || question.answerImages[index]).length < 2);
+    if (invalidIndex >= 0) {
+      setActiveQuestion(invalidIndex);
+      setRoomError(`Question ${invalidIndex + 1} needs a question and at least two answer options.`);
+      return;
+    }
+    await openHostLobby();
+  }
+
+  async function enterParticipantLobby() {
+    if (!nickname.trim()) return;
+    setJoiningRoom(true); setRoomError("");
+    try {
+      const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "join", code, nickname: nickname.trim(), playerId }) });
+      if (!response.ok) { const data = await response.json(); throw new Error(data.error || "Unable to join room"); }
+      setJoined(false); setParticipantLobby(true);
+    } catch (error) { setRoomError(error instanceof Error ? error.message : "Unable to join room"); }
+    finally { setJoiningRoom(false); }
+  }
+
+  async function startLiveGame() {
+    const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "start", code: roomCode }) });
+    if (response.ok) { setLobby(false); setPreviewing(true); }
+  }
+
+  async function leaveParticipantRoom() {
+    await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "leave", code, playerId }) }).catch(() => undefined);
+    setParticipantLobby(false); setGameStarted(false); setNickname(""); window.history.replaceState({}, "", window.location.pathname);
+  }
 
   function updateQuestion(patch: Partial<(typeof questions)[number]>) {
     setQuestions(items => items.map((item, index) => index === activeQuestion ? { ...item, ...patch } : item));
@@ -128,10 +195,10 @@ export default function Home() {
           <article><i>◎</i><h3>QR or secret code</h3><p>Join from any phone without downloading an app.</p></article>
         </div>
       </section>
-      {joined && <div className="modal" onClick={() => setJoined(false)}><form onSubmit={e => {e.preventDefault();if(!nickname.trim()) return;setJoined(false);setParticipantLobby(true)}} onClick={e => e.stopPropagation()}><span className="success">✓</span><h2>You&apos;re in!</h2><p>Room <b>{code}</b> is ready. Choose a nickname to join the lobby.</p><input autoFocus value={nickname} onChange={e => setNickname(e.target.value.slice(0,24))} placeholder="Your nickname" aria-label="Your nickname"/><button type="submit" disabled={!nickname.trim()}>Enter lobby →</button><small onClick={() => setJoined(false)}>Cancel</small></form></div>}
-      {participantLobby && <div className="participantLobby"><div className="participantTop"><span className="brand">QuizPop!</span><span>Room {code}</span></div><div className="waitingCard"><span className="waitingIcon">✓</span><p>YOU&apos;RE IN</p><h2>{nickname}</h2><div className="waitingDots"><i/><i/><i/></div><h3>Waiting for the host to start…</h3><small>Keep this screen open</small><button onClick={() => {setParticipantLobby(false);setNickname("");window.history.replaceState({},"",window.location.pathname)}}>Leave room</button></div></div>}
+      {joined && <div className="modal" onClick={() => setJoined(false)}><form onSubmit={e => {e.preventDefault();enterParticipantLobby()}} onClick={e => e.stopPropagation()}><span className="success">✓</span><h2>Join room</h2><p>Enter a nickname for room <b>{code}</b>.</p><input autoFocus value={nickname} onChange={e => setNickname(e.target.value.slice(0,24))} placeholder="Your nickname" aria-label="Your nickname"/>{roomError && <p className="roomError">{roomError}</p>}<button type="submit" disabled={!nickname.trim() || joiningRoom}>{joiningRoom ? "Joining…" : "Enter lobby →"}</button><small onClick={() => setJoined(false)}>Cancel</small></form></div>}
+      {participantLobby && <div className="participantLobby"><div className="participantTop"><span className="brand">QuizPop!</span><span>Room {code}</span></div><div className="waitingCard"><span className="waitingIcon">{gameStarted ? "⚡" : "✓"}</span><p>{gameStarted ? "GAME STARTED" : "YOU'RE IN"}</p><h2>{nickname}</h2>{!gameStarted && <div className="waitingDots"><i/><i/><i/></div>}<h3>{gameStarted ? "Look at the host’s screen!" : "Waiting for the host to start…"}</h3><small>{gameStarted ? "Your first question is coming up" : "Keep this screen open"}</small><button onClick={leaveParticipantRoom}>Leave room</button></div></div>}
       {hostMode && <div className="studio">
-        <header><button className="close" onClick={() => setHostMode(false)}>← Back</button><div className="studioBrand">QuizPop! <span>Quiz editor</span></div><button className="previewBtn" onClick={() => setPreviewing(true)}>◉ Preview</button><button className="present" onClick={() => {setHostMode(false);setLobby(true)}}>Start live game</button></header>
+        <header><button className="close" onClick={() => setHostMode(false)}>← Back</button><div className="studioBrand">QuizPop! <span>Quiz editor</span></div><button className="previewBtn" onClick={() => setPreviewing(true)}>◉ Preview</button><button className="present" onClick={postGame}>Post game</button></header>
         <div className="studioBody">
           <aside><h3>QUESTIONS</h3>{questions.map((question, index) => <button key={index} onClick={() => setActiveQuestion(index)} className={`thumb ${activeQuestion === index ? "active" : ""}`}><span>{index + 1}</span><i>{question.image ? "▧" : "?"}</i><b>{question.text || "Untitled question"}</b></button>)}<button className="addQ" onClick={addQuestion}>＋ Add question</button><div className="capacity"><b>♟ 0 / 300</b><span>Live player capacity</span></div></aside>
           <section className="editor">
@@ -140,6 +207,7 @@ export default function Home() {
             <label className={`upload ${currentQuestion.image ? "hasImage" : ""}`} style={currentQuestion.image ? {backgroundImage:`url(${currentQuestion.image})`} : undefined}>{!currentQuestion.image && <><b>＋</b><strong>Add an image to your question</strong><span>PNG or JPG · up to 10 MB</span></>}<input type="file" accept="image/*" onChange={e => loadImage(e.target.files?.[0])}/></label>
             <div className="answerHint"><b>Answer options</b><span>Use wording, a picture, or both</span></div>
             <div className="editAnswers">{answers.map((a,i)=><div className={`${a.color} ${currentQuestion.answerImages[i] ? "withAnswerImage" : ""}`} key={a.text}>{currentQuestion.answerImages[i] && <><div className="answerImageViewport"><img style={{transform:`scale(${currentQuestion.answerScales[i]/100})`}} src={currentQuestion.answerImages[i] || ""} alt={`Answer ${i+1} option`}/></div><label className="imageScale" title="Adjust picture size"><span>−</span><input aria-label={`Picture size for answer ${i+1}`} type="range" min="50" max="180" value={currentQuestion.answerScales[i]} onChange={e => resizeAnswerImage(i,Number(e.target.value))}/><span>＋</span></label></>}<b>{a.icon}</b><input value={currentQuestion.answers[i]} onChange={e => {const next=[...currentQuestion.answers];next[i]=e.target.value;updateQuestion({answers:next})}} placeholder={currentQuestion.answerImages[i] ? "Optional wording" : `Answer ${i+1}`}/><label className="correctPick" title="Correct answer"><input type="radio" checked={currentQuestion.correct===i} onChange={() => updateQuestion({correct:i})} name={`correct-${activeQuestion}`}/><span>✓</span></label>{currentQuestion.answerImages[i] ? <button className="removeAnswerImage" onClick={() => removeAnswerImage(i)} title="Remove picture">×</button> : <label className="answerImageButton" title="Use a picture"><span>▧</span><input type="file" accept="image/*" onChange={e => loadAnswerImage(i,e.target.files?.[0])}/></label>}</div>)}</div>
+            <div className="postGameBar"><div>{roomError ? <span className="postError">{roomError}</span> : <span><b>{questions.length}</b> {questions.length === 1 ? "question" : "questions"} ready</span>}</div><button onClick={postGame}>Post game &amp; open lobby →</button></div>
           </section>
         </div>
       </div>}
@@ -155,7 +223,7 @@ export default function Home() {
       </div>}
       {lobby && <div className="lobby">
         <header><span className="brand">QuizPop!</span><button onClick={() => setLobby(false)}>Exit game</button></header>
-        <div className="lobbyGrid"><section><span className="livePill">● LIVE LOBBY</span><h2>Join the game</h2><p>Scan with your phone or enter the game code</p><div className="qr"><img alt={`QR code to join room ${roomCode}`} src={qrUrl}/></div><div className="roomCode"><span>GAME CODE</span><b>{roomCode}</b><small>{siteOrigin.replace(/^https?:\/\//, "")}</small></div></section><aside><div className="playerCount"><b>0</b><span>/ 300 players</span></div><h3>Players will appear here</h3><p>Share the code or QR with your audience. You can start whenever you&apos;re ready.</p><button disabled>Start game</button></aside></div>
+        <div className="lobbyGrid"><section><span className="livePill">● LIVE LOBBY</span><h2>Join the game</h2><p>Scan with your phone or enter the game code</p><div className="qr"><img alt={`QR code to join room ${roomCode}`} src={qrUrl}/></div><div className="roomCode"><span>GAME CODE</span><b>{roomCode}</b><small>{siteOrigin.replace(/^https?:\/\//, "")}</small></div></section><aside><div className="playerCount"><b>{participants.length}</b><span>/ 300 players</span></div>{participants.length ? <><h3>Players in the room</h3><div className="playerNames">{participants.map(player => <span key={player.id}>{player.nickname}</span>)}</div></> : <><h3>Players will appear here</h3><p>Share the code or QR with your audience.</p></>}<button disabled={!participants.length} onClick={startLiveGame}>{participants.length ? `Start game with ${participants.length}` : "Waiting for players"}</button></aside></div>
       </div>}
     </main>
   );
