@@ -12,6 +12,8 @@ const answers = [
 export default function Home() {
   const [code, setCode] = useState("");
   const [joined, setJoined] = useState(false);
+  const [nickname, setNickname] = useState("");
+  const [participantLobby, setParticipantLobby] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [hostMode, setHostMode] = useState(false);
   const [lobby, setLobby] = useState(false);
@@ -126,7 +128,8 @@ export default function Home() {
           <article><i>◎</i><h3>QR or secret code</h3><p>Join from any phone without downloading an app.</p></article>
         </div>
       </section>
-      {joined && <div className="modal" onClick={() => setJoined(false)}><div onClick={e => e.stopPropagation()}><span className="success">✓</span><h2>You&apos;re in!</h2><p>Room <b>{code}</b> is ready. Choose a nickname to join the lobby.</p><input autoFocus placeholder="Your nickname"/><button>Enter lobby →</button><small onClick={() => setJoined(false)}>Cancel</small></div></div>}
+      {joined && <div className="modal" onClick={() => setJoined(false)}><form onSubmit={e => {e.preventDefault();if(!nickname.trim()) return;setJoined(false);setParticipantLobby(true)}} onClick={e => e.stopPropagation()}><span className="success">✓</span><h2>You&apos;re in!</h2><p>Room <b>{code}</b> is ready. Choose a nickname to join the lobby.</p><input autoFocus value={nickname} onChange={e => setNickname(e.target.value.slice(0,24))} placeholder="Your nickname" aria-label="Your nickname"/><button type="submit" disabled={!nickname.trim()}>Enter lobby →</button><small onClick={() => setJoined(false)}>Cancel</small></form></div>}
+      {participantLobby && <div className="participantLobby"><div className="participantTop"><span className="brand">QuizPop!</span><span>Room {code}</span></div><div className="waitingCard"><span className="waitingIcon">✓</span><p>YOU&apos;RE IN</p><h2>{nickname}</h2><div className="waitingDots"><i/><i/><i/></div><h3>Waiting for the host to start…</h3><small>Keep this screen open</small><button onClick={() => {setParticipantLobby(false);setNickname("");window.history.replaceState({},"",window.location.pathname)}}>Leave room</button></div></div>}
       {hostMode && <div className="studio">
         <header><button className="close" onClick={() => setHostMode(false)}>← Back</button><div className="studioBrand">QuizPop! <span>Quiz editor</span></div><button className="previewBtn" onClick={() => setPreviewing(true)}>◉ Preview</button><button className="present" onClick={() => {setHostMode(false);setLobby(true)}}>Start live game</button></header>
         <div className="studioBody">
