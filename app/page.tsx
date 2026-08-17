@@ -9,12 +9,37 @@ const answers = [
   { icon: "■", text: "Saturn", color: "green" },
 ];
 
+type Avatar = { character: string; skin: string; hair: string; outfit: string; accessory: string };
+const outfitIcons: Record<string,string> = { dress:"🍓", gown:"👗", suit:"👔", tuxedo:"🤵", dinosaur:"🦖", wedding:"💍", cowboy:"🤠", astronaut:"🚀", wizard:"🪄" };
+const sunnyOutfitImages: Record<string,string> = { dress:"/sunny-transparent.png?v=4", gown:"/sunny-gown.png?v=4", suit:"/sunny-suit.png?v=4", tuxedo:"/sunny-tuxedo.png?v=4", dinosaur:"/sunny-dinosaur.png?v=4", wedding:"/sunny-wedding.png?v=4", cowboy:"/sunny-cowboy.png?v=4", astronaut:"/sunny-astronaut.png?v=4", wizard:"/sunny-wizard.png?v=4" };
+const avatarChoices = {
+  character: [{id:"golden",label:"Yuzu the golden retriever"}],
+  skin: [{id:"light",label:"Cream"},{id:"warm",label:"Golden"},{id:"tan",label:"Honey"},{id:"deep",label:"Chocolate"},{id:"green",label:"Mint"},{id:"blue",label:"Blue"},{id:"pink",label:"Pink"},{id:"purple",label:"Purple"}],
+  hair: [{id:"short",label:"Short"},{id:"curly",label:"Curly"},{id:"long",label:"Long"},{id:"spiky",label:"Spiky"}],
+  outfit: [{id:"gown",label:"Royal"},{id:"suit",label:"Leader"},{id:"tuxedo",label:"Classic"},{id:"dinosaur",label:"Dino"},{id:"wedding",label:"Wedding"},{id:"cowboy",label:"Cowboy"},{id:"astronaut",label:"Space"},{id:"wizard",label:"Wizard"}],
+  accessory: [{id:"none",label:"None"},{id:"hat",label:"Hat"},{id:"crown",label:"Crown"}],
+};
+
+function AvatarView({ avatar, size = "medium" }: { avatar: Avatar; size?: "small" | "medium" | "large" }) {
+  if (avatar.character === "golden") {
+    const outfitImage = sunnyOutfitImages[avatar.outfit] || sunnyOutfitImages.dress;
+    return <div className={`avatar avatar-${size} character-golden fur-${avatar.skin}`} aria-label={`Yuzu the golden retriever wearing a ${avatar.outfit}`}><img src={outfitImage} alt=""/>{avatar.accessory !== "none" && <span className={`goldenAccessory ${avatar.accessory}`}>{avatar.accessory === "glasses" ? "👓" : avatar.accessory === "hat" ? "🎩" : "👑"}</span>}</div>;
+  }
+  const hasMascotEars = ["bear","cat","rabbit","fox","panda","unicorn"].includes(avatar.character);
+  const hasBeak = ["owl","penguin"].includes(avatar.character);
+  return <div className={`avatar avatar-${size} character-${avatar.character} skin-${avatar.skin} hair-${avatar.hair} outfit-${avatar.outfit}`} aria-label={`${avatar.character} cartoon profile avatar`}>
+    {avatar.character === "alien" && <><i className="antenna left"/><i className="antenna right"/></>}{hasMascotEars && <><i className="mascotEar left"/><i className="mascotEar right"/></>}{avatar.character === "robot" && <><i className="robotAntenna"/><i className="robotSide left"/><i className="robotSide right"/></>}{avatar.character === "dragon" && <><i className="dragonHorn left"/><i className="dragonHorn right"/><i className="dragonWing left"/><i className="dragonWing right"/></>}{avatar.character === "cloud" && <div className="cloudPuffs"><i/><i/><i/></div>}{avatar.character === "frog" && <><i className="frogEye left"/><i className="frogEye right"/></>}{avatar.character === "unicorn" && <i className="unicornHorn"/>}
+    <div className="avatarHair"/>{avatar.accessory === "hat" && <div className="avatarHat">★</div>}{avatar.accessory === "crown" && <div className="avatarCrown">♛</div>}<div className="avatarFace"><i className="eye left"/><i className="eye right"/><i className="mouth"/>{["bear","cat","rabbit","fox","panda"].includes(avatar.character) && <i className="mascotNose"/>}{avatar.character === "panda" && <><i className="pandaPatch left"/><i className="pandaPatch right"/></>}{hasBeak && <i className="mascotBeak"/>}{avatar.character === "rabbit" && <i className="rabbitTeeth"/>}{avatar.character === "robot" && <i className="robotPanel"/>}{avatar.character === "dragon" && <i className="dragonSnout"/>}{avatar.accessory === "glasses" && <div className="avatarGlasses"><b/><b/></div>}</div><div className="avatarBody"><span/>{avatar.character === "ghost" && <i className="ghostTail">● ● ●</i>}{avatar.outfit === "halloween" && <b className="outfitBadge">☠</b>}{avatar.outfit === "christmas" && <b className="outfitBadge">❄</b>}{avatar.outfit === "space" && <b className="outfitBadge">✦</b>}{avatar.outfit === "royal" && <b className="outfitBadge">◆</b>}</div>
+  </div>;
+}
+
 export default function Home() {
   const [code, setCode] = useState("");
   const [joined, setJoined] = useState(false);
   const [nickname, setNickname] = useState("");
   const [participantLobby, setParticipantLobby] = useState(false);
-  const [participants, setParticipants] = useState<{id:string;nickname:string}[]>([]);
+  const [participants, setParticipants] = useState<{id:string;nickname:string;avatar:Avatar}[]>([]);
+  const [avatar, setAvatar] = useState<Avatar>({ character: "golden", skin: "warm", hair: "short", outfit: "gown", accessory: "none" });
   const [roomError, setRoomError] = useState("");
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
@@ -31,7 +56,10 @@ export default function Home() {
   const currentQuestion = questions[activeQuestion];
   const roomCode = "7QX9KP";
   const siteOrigin = typeof window === "undefined" ? "" : window.location.origin;
-  const joinUrl = `${siteOrigin}/?room=${roomCode}`;
+  const configuredOrigin = String(import.meta.env.VITE_PUBLIC_SITE_URL || "").replace(/\/$/, "");
+  const isLocalSite = /^(localhost|127\.0\.0\.1)$/i.test(typeof window === "undefined" ? "" : window.location.hostname);
+  const joinOrigin = configuredOrigin || siteOrigin;
+  const joinUrl = `${joinOrigin}/?room=${roomCode}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(joinUrl)}`;
 
   useEffect(() => {
@@ -87,7 +115,7 @@ export default function Home() {
     if (!nickname.trim()) return;
     setJoiningRoom(true); setRoomError("");
     try {
-      const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "join", code, nickname: nickname.trim(), playerId }) });
+      const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "join", code, nickname: nickname.trim(), playerId, avatar }) });
       if (!response.ok) { const data = await response.json(); throw new Error(data.error || "Unable to join room"); }
       setJoined(false); setParticipantLobby(true);
     } catch (error) { setRoomError(error instanceof Error ? error.message : "Unable to join room"); }
@@ -143,6 +171,11 @@ export default function Home() {
     updateQuestion({ answerScales: next });
   }
 
+  function randomizeAvatar() {
+    const pick = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
+    setAvatar({ character: pick(avatarChoices.character).id, skin: pick(avatarChoices.skin).id, hair: pick(avatarChoices.hair).id, outfit: pick(avatarChoices.outfit).id, accessory: pick(avatarChoices.accessory).id });
+  }
+
   return (
     <main>
       <nav className="nav">
@@ -172,6 +205,7 @@ export default function Home() {
           </div>
           <div className="floatTag"><b>+300</b><span>players<br/>per room</span></div>
           <div className="floatTag bottom"><b>⚡</b><span>Real-time<br/>results</span></div>
+          <div className="mascotSticker"><img src="/quizpop-mascot.jpg" alt="Yuzu, the QuizPop golden retriever mascot"/><span><b>Meet Yuzu</b>your game-day cheerleader</span></div>
         </div>
       </section>
       <section id="highlights" className="featureBar">
@@ -195,8 +229,12 @@ export default function Home() {
           <article><i>◎</i><h3>QR or secret code</h3><p>Join from any phone without downloading an app.</p></article>
         </div>
       </section>
-      {joined && <div className="modal" onClick={() => setJoined(false)}><form onSubmit={e => {e.preventDefault();enterParticipantLobby()}} onClick={e => e.stopPropagation()}><span className="success">✓</span><h2>Join room</h2><p>Enter a nickname for room <b>{code}</b>.</p><input autoFocus value={nickname} onChange={e => setNickname(e.target.value.slice(0,24))} placeholder="Your nickname" aria-label="Your nickname"/>{roomError && <p className="roomError">{roomError}</p>}<button type="submit" disabled={!nickname.trim() || joiningRoom}>{joiningRoom ? "Joining…" : "Enter lobby →"}</button><small onClick={() => setJoined(false)}>Cancel</small></form></div>}
-      {participantLobby && <div className="participantLobby"><div className="participantTop"><span className="brand">QuizPop!</span><span>Room {code}</span></div><div className="waitingCard"><span className="waitingIcon">{gameStarted ? "⚡" : "✓"}</span><p>{gameStarted ? "GAME STARTED" : "YOU'RE IN"}</p><h2>{nickname}</h2>{!gameStarted && <div className="waitingDots"><i/><i/><i/></div>}<h3>{gameStarted ? "Look at the host’s screen!" : "Waiting for the host to start…"}</h3><small>{gameStarted ? "Your first question is coming up" : "Keep this screen open"}</small><button onClick={leaveParticipantRoom}>Leave room</button></div></div>}
+      {joined && <div className="modal avatarModal" onClick={() => setJoined(false)}><form onSubmit={e => {e.preventDefault();enterParticipantLobby()}} onClick={e => e.stopPropagation()}>
+        <h2>Create your player</h2><p>Room <b>{code}</b></p>
+        <div className="avatarCreator"><div className="avatarPreview sunnyPreview"><AvatarView avatar={avatar} size="large"/><span>Yuzu, your QuizPop player</span></div><div className="avatarControls">{Object.entries(avatarChoices).filter(([category]) => category === "outfit").map(([category,options]) => <fieldset key={category} className="characterGalleryField"><legend>Choose character</legend><div className="sunnyCharacterChoices">{options.map(option => <button type="button" key={option.id} title={option.label} aria-label={`character: ${option.label}`} className={`sunnyCharacterChoice ${avatar.outfit === option.id ? "selected" : ""}`} onClick={() => setAvatar(current => ({...current,outfit:option.id}))}><img src={sunnyOutfitImages[option.id]} alt=""/><small><span>{outfitIcons[option.id]}</span>{option.label}</small></button>)}</div></fieldset>)}</div></div>
+        <input autoFocus value={nickname} onChange={e => setNickname(e.target.value.slice(0,24))} placeholder="Your nickname" aria-label="Your nickname"/>{roomError && <p className="roomError">{roomError}</p>}<button type="submit" disabled={!nickname.trim() || joiningRoom}>{joiningRoom ? "Joining…" : "Enter lobby →"}</button><small onClick={() => setJoined(false)}>Cancel</small>
+      </form></div>}
+      {participantLobby && <div className="participantLobby"><div className="participantTop"><span className="brand">QuizPop!</span><span>Room {code}</span></div><div className="waitingCard"><AvatarView avatar={avatar} size="large"/><p>{gameStarted ? "GAME STARTED" : "YOU'RE IN"}</p><h2>{nickname}</h2>{!gameStarted && <div className="waitingDots"><i/><i/><i/></div>}<h3>{gameStarted ? "Look at the host’s screen!" : "Waiting for the host to start…"}</h3><small>{gameStarted ? "Your first question is coming up" : "Keep this screen open"}</small><button onClick={leaveParticipantRoom}>Leave room</button></div></div>}
       {hostMode && <div className="studio">
         <header><button className="close" onClick={() => setHostMode(false)}>← Back</button><div className="studioBrand">QuizPop! <span>Quiz editor</span></div><button className="previewBtn" onClick={() => setPreviewing(true)}>◉ Preview</button><button className="present" onClick={postGame}>Post game</button></header>
         <div className="studioBody">
@@ -222,8 +260,8 @@ export default function Home() {
         </section>
       </div>}
       {lobby && <div className="lobby">
-        <header><span className="brand">QuizPop!</span><button onClick={() => setLobby(false)}>Exit game</button></header>
-        <div className="lobbyGrid"><section><span className="livePill">● LIVE LOBBY</span><h2>Join the game</h2><p>Scan with your phone or enter the game code</p><div className="qr"><img alt={`QR code to join room ${roomCode}`} src={qrUrl}/></div><div className="roomCode"><span>GAME CODE</span><b>{roomCode}</b><small>{siteOrigin.replace(/^https?:\/\//, "")}</small></div></section><aside><div className="playerCount"><b>{participants.length}</b><span>/ 300 players</span></div>{participants.length ? <><h3>Players in the room</h3><div className="playerNames">{participants.map(player => <span key={player.id}>{player.nickname}</span>)}</div></> : <><h3>Players will appear here</h3><p>Share the code or QR with your audience.</p></>}<button disabled={!participants.length} onClick={startLiveGame}>{participants.length ? `Start game with ${participants.length}` : "Waiting for players"}</button></aside></div>
+        <header><span className="brand">QuizPop!</span><span className="lobbyMascot"><img src="/quizpop-mascot.jpg" alt="Yuzu, the QuizPop mascot"/><span><b>Yuzu says:</b> good luck, players!</span></span><button onClick={() => setLobby(false)}>Exit game</button></header>
+        <div className="lobbyGrid"><section><span className="livePill">● LIVE LOBBY</span><h2>Join the game</h2><p>Scan with your phone or enter the game code</p>{isLocalSite && !configuredOrigin ? <div className="localQrWarning"><b>QR unavailable on localhost</b><span>Open your deployed Netlify website and post the game there. A phone cannot connect to localhost on this computer.</span></div> : <div className="qr"><img alt={`QR code to join room ${roomCode}`} src={qrUrl}/></div>}<div className="roomCode"><span>GAME CODE</span><b>{roomCode}</b><small>{joinOrigin.replace(/^https?:\/\//, "")}</small></div></section><aside><div className="playerCount"><b>{participants.length}</b><span>/ 300 players</span></div>{participants.length ? <><h3>Players in the room</h3><div className="playerNames">{participants.map(player => <span key={player.id}><AvatarView avatar={player.avatar} size="small"/><b>{player.nickname}</b></span>)}</div></> : <><h3>Players will appear here</h3><p>Share the code or QR with your audience.</p></>}<button disabled={!participants.length} onClick={startLiveGame}>{participants.length ? `Start game with ${participants.length}` : "Waiting for players"}</button></aside></div>
       </div>}
     </main>
   );
