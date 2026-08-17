@@ -3,7 +3,7 @@ import { getStore } from "@netlify/blobs";
 const headers = { "content-type": "application/json", "cache-control": "no-store" };
 const reply = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers });
 const safeCode = (value: unknown) => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
-const choices = { character: ["human", "bear", "cat", "rabbit", "fox", "panda", "frog", "owl", "penguin", "unicorn", "alien", "robot", "ghost", "dragon", "cloud"], skin: ["light", "warm", "tan", "deep", "green", "blue", "pink", "purple"], hair: ["short", "curly", "long", "spiky"], outfit: ["casual", "sport", "space", "halloween", "christmas", "royal"], accessory: ["none", "glasses", "hat", "crown"] };
+const choices = { character: ["golden"], skin: ["warm"], hair: ["short"], outfit: ["gown", "suit", "tuxedo", "dinosaur", "wedding", "cowboy", "astronaut", "wizard"], accessory: ["none"] };
 
 type Avatar = { character: string; skin: string; hair: string; outfit: string; accessory: string };
 type Player = { id: string; nickname: string; avatar: Avatar; joinedAt: number };
