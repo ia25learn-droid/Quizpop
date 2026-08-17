@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const answers = [
   { icon: "▲", text: "Venus", color: "red" },
@@ -22,6 +22,18 @@ export default function Home() {
   ]);
 
   const currentQuestion = questions[activeQuestion];
+  const roomCode = "7QX9KP";
+  const siteOrigin = typeof window === "undefined" ? "" : window.location.origin;
+  const joinUrl = `${siteOrigin}/?room=${roomCode}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(joinUrl)}`;
+
+  useEffect(() => {
+    const scannedRoom = new URLSearchParams(window.location.search).get("room");
+    if (scannedRoom) {
+      setCode(scannedRoom.toUpperCase());
+      setJoined(true);
+    }
+  }, []);
 
   function updateQuestion(patch: Partial<(typeof questions)[number]>) {
     setQuestions(items => items.map((item, index) => index === activeQuestion ? { ...item, ...patch } : item));
@@ -140,7 +152,7 @@ export default function Home() {
       </div>}
       {lobby && <div className="lobby">
         <header><span className="brand">QuizPop!</span><button onClick={() => setLobby(false)}>Exit game</button></header>
-        <div className="lobbyGrid"><section><span className="livePill">● LIVE LOBBY</span><h2>Join the game</h2><p>Scan with your phone or enter the game code</p><div className="qr"><img alt="QR code to join room 7QX9KP" src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=https%3A%2F%2Fquizpop.example%2Fjoin%2F7QX9KP"/></div><div className="roomCode"><span>GAME CODE</span><b>7QX9KP</b></div></section><aside><div className="playerCount"><b>0</b><span>/ 300 players</span></div><h3>Players will appear here</h3><p>Share the code or QR with your audience. You can start whenever you&apos;re ready.</p><button disabled>Start game</button></aside></div>
+        <div className="lobbyGrid"><section><span className="livePill">● LIVE LOBBY</span><h2>Join the game</h2><p>Scan with your phone or enter the game code</p><div className="qr"><img alt={`QR code to join room ${roomCode}`} src={qrUrl}/></div><div className="roomCode"><span>GAME CODE</span><b>{roomCode}</b><small>{siteOrigin.replace(/^https?:\/\//, "")}</small></div></section><aside><div className="playerCount"><b>0</b><span>/ 300 players</span></div><h3>Players will appear here</h3><p>Share the code or QR with your audience. You can start whenever you&apos;re ready.</p><button disabled>Start game</button></aside></div>
       </div>}
     </main>
   );
