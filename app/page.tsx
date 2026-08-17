@@ -15,20 +15,58 @@ export default function Home() {
   const [selected, setSelected] = useState<number | null>(null);
   const [hostMode, setHostMode] = useState(false);
   const [lobby, setLobby] = useState(false);
-  const [questionImage, setQuestionImage] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [activeQuestion, setActiveQuestion] = useState(0);
+  const [questions, setQuestions] = useState([
+    { text: "Which planet is known as the Red Planet?", image: null as string | null, answers: ["Venus", "Mars", "Jupiter", "Saturn"], answerImages: [null, null, null, null] as (string | null)[], answerScales: [100, 100, 100, 100], correct: 1 },
+  ]);
+
+  const currentQuestion = questions[activeQuestion];
+
+  function updateQuestion(patch: Partial<(typeof questions)[number]>) {
+    setQuestions(items => items.map((item, index) => index === activeQuestion ? { ...item, ...patch } : item));
+  }
+
+  function addQuestion() {
+    setQuestions(items => [...items, { text: "", image: null, answers: ["", "", "", ""], answerImages: [null, null, null, null], answerScales: [100, 100, 100, 100], correct: 0 }]);
+    setActiveQuestion(questions.length);
+  }
 
   function loadImage(file?: File) {
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setQuestionImage(String(reader.result));
+    reader.onload = () => updateQuestion({ image: String(reader.result) });
     reader.readAsDataURL(file);
+  }
+
+  function loadAnswerImage(answerIndex: number, file?: File) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const next = [...currentQuestion.answerImages];
+      next[answerIndex] = String(reader.result);
+      updateQuestion({ answerImages: next });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function removeAnswerImage(answerIndex: number) {
+    const next = [...currentQuestion.answerImages];
+    next[answerIndex] = null;
+    updateQuestion({ answerImages: next });
+  }
+
+  function resizeAnswerImage(answerIndex: number, scale: number) {
+    const next = [...currentQuestion.answerScales];
+    next[answerIndex] = scale;
+    updateQuestion({ answerScales: next });
   }
 
   return (
     <main>
       <nav className="nav">
         <a className="brand" href="#">QuizPop<span>!</span></a>
-        <div className="navlinks"><a href="#features">How it works</a><a href="#features">Features</a></div>
+        <div className="navlinks"><a href="#how-it-works">How it works</a><a href="#features">Features</a></div>
         <button className="hostBtn" onClick={() => setHostMode(true)}>Host a game <span>→</span></button>
       </nav>
       <section className="hero">
@@ -55,21 +93,50 @@ export default function Home() {
           <div className="floatTag bottom"><b>⚡</b><span>Real-time<br/>results</span></div>
         </div>
       </section>
-      <section id="features" className="featureBar">
+      <section id="highlights" className="featureBar">
         <div><b>◎</b><span><strong>Scan &amp; play</strong>No app needed</span></div><div><b>⚡</b><span><strong>Instant action</strong>Zero setup friction</span></div><div><b>▧</b><span><strong>Pictures welcome</strong>Questions &amp; answers</span></div><div><b>♟</b><span><strong>Room for everyone</strong>Up to 300 players</span></div>
+      </section>
+      <section id="how-it-works" className="infoSection howSection">
+        <div className="sectionIntro"><span>HOW IT WORKS</span><h2>From idea to game time<br/>in three easy steps.</h2><p>No downloads and no complicated setup. Build your quiz, invite the room, and watch everyone play together.</p></div>
+        <div className="steps">
+          <article><b>01</b><i>✎</i><h3>Create your quiz</h3><p>Write questions and use wording, pictures, or both for every answer.</p></article>
+          <article><b>02</b><i>▦</i><h3>Share the room</h3><p>Players scan the QR code or enter the six-character secret game code.</p></article>
+          <article><b>03</b><i>⚡</i><h3>Play live</h3><p>Host up to 300 participants and reveal results together in real time.</p></article>
+        </div>
+        <button onClick={() => setHostMode(true)}>Create your first game →</button>
+      </section>
+      <section id="features" className="infoSection featureSection">
+        <div className="sectionIntro"><span>BUILT FOR BIG ROOMS</span><h2>Everything you need<br/>to make it memorable.</h2></div>
+        <div className="featureCards">
+          <article className="featureLarge"><span>300</span><h3>Everyone gets a seat</h3><p>Bring classrooms, company all-hands, and community events into one live room.</p></article>
+          <article><i>▧</i><h3>Picture-powered questions</h3><p>Add and resize images in questions and answer choices.</p></article>
+          <article><i>◉</i><h3>Preview before you present</h3><p>See the participant view before going live.</p></article>
+          <article><i>◎</i><h3>QR or secret code</h3><p>Join from any phone without downloading an app.</p></article>
+        </div>
       </section>
       {joined && <div className="modal" onClick={() => setJoined(false)}><div onClick={e => e.stopPropagation()}><span className="success">✓</span><h2>You&apos;re in!</h2><p>Room <b>{code}</b> is ready. Choose a nickname to join the lobby.</p><input autoFocus placeholder="Your nickname"/><button>Enter lobby →</button><small onClick={() => setJoined(false)}>Cancel</small></div></div>}
       {hostMode && <div className="studio">
-        <header><button className="close" onClick={() => setHostMode(false)}>← Back</button><div className="studioBrand">QuizPop! <span>Quiz editor</span></div><button className="present" onClick={() => {setHostMode(false);setLobby(true)}}>Start live game</button></header>
+        <header><button className="close" onClick={() => setHostMode(false)}>← Back</button><div className="studioBrand">QuizPop! <span>Quiz editor</span></div><button className="previewBtn" onClick={() => setPreviewing(true)}>◉ Preview</button><button className="present" onClick={() => {setHostMode(false);setLobby(true)}}>Start live game</button></header>
         <div className="studioBody">
-          <aside><h3>QUESTIONS</h3><button className="thumb active"><span>1</span><i>🪐</i><b>Multiple choice</b></button><button className="addQ">＋ Add question</button><div className="capacity"><b>♟ 0 / 300</b><span>Live player capacity</span></div></aside>
+          <aside><h3>QUESTIONS</h3>{questions.map((question, index) => <button key={index} onClick={() => setActiveQuestion(index)} className={`thumb ${activeQuestion === index ? "active" : ""}`}><span>{index + 1}</span><i>{question.image ? "▧" : "?"}</i><b>{question.text || "Untitled question"}</b></button>)}<button className="addQ" onClick={addQuestion}>＋ Add question</button><div className="capacity"><b>♟ 0 / 300</b><span>Live player capacity</span></div></aside>
           <section className="editor">
             <div className="editTop"><select aria-label="Question type"><option>Multiple choice</option><option>True or false</option><option>Poll</option></select><label>Time limit <select><option>20 seconds</option><option>30 seconds</option><option>60 seconds</option></select></label><label>Points <select><option>Standard</option><option>Double</option><option>None</option></select></label></div>
-            <input className="questionInput" defaultValue="Which planet is known as the Red Planet?" aria-label="Question"/>
-            <label className={`upload ${questionImage ? "hasImage" : ""}`} style={questionImage ? {backgroundImage:`url(${questionImage})`} : undefined}>{!questionImage && <><b>＋</b><strong>Add an image to your question</strong><span>PNG or JPG · up to 10 MB</span></>}<input type="file" accept="image/*" onChange={e => loadImage(e.target.files?.[0])}/></label>
-            <div className="editAnswers">{answers.map((a,i)=><div className={a.color} key={a.text}><b>{a.icon}</b><input defaultValue={a.text}/><label title="Correct answer"><input type="radio" defaultChecked={i===1} name="correct"/><span>✓</span></label><button title="Add image">▧</button></div>)}</div>
+            <input className="questionInput" value={currentQuestion.text} onChange={e => updateQuestion({text:e.target.value})} placeholder="Type your question" aria-label="Question"/>
+            <label className={`upload ${currentQuestion.image ? "hasImage" : ""}`} style={currentQuestion.image ? {backgroundImage:`url(${currentQuestion.image})`} : undefined}>{!currentQuestion.image && <><b>＋</b><strong>Add an image to your question</strong><span>PNG or JPG · up to 10 MB</span></>}<input type="file" accept="image/*" onChange={e => loadImage(e.target.files?.[0])}/></label>
+            <div className="answerHint"><b>Answer options</b><span>Use wording, a picture, or both</span></div>
+            <div className="editAnswers">{answers.map((a,i)=><div className={`${a.color} ${currentQuestion.answerImages[i] ? "withAnswerImage" : ""}`} key={a.text}>{currentQuestion.answerImages[i] && <><div className="answerImageViewport"><img style={{transform:`scale(${currentQuestion.answerScales[i]/100})`}} src={currentQuestion.answerImages[i] || ""} alt={`Answer ${i+1} option`}/></div><label className="imageScale" title="Adjust picture size"><span>−</span><input aria-label={`Picture size for answer ${i+1}`} type="range" min="50" max="180" value={currentQuestion.answerScales[i]} onChange={e => resizeAnswerImage(i,Number(e.target.value))}/><span>＋</span></label></>}<b>{a.icon}</b><input value={currentQuestion.answers[i]} onChange={e => {const next=[...currentQuestion.answers];next[i]=e.target.value;updateQuestion({answers:next})}} placeholder={currentQuestion.answerImages[i] ? "Optional wording" : `Answer ${i+1}`}/><label className="correctPick" title="Correct answer"><input type="radio" checked={currentQuestion.correct===i} onChange={() => updateQuestion({correct:i})} name={`correct-${activeQuestion}`}/><span>✓</span></label>{currentQuestion.answerImages[i] ? <button className="removeAnswerImage" onClick={() => removeAnswerImage(i)} title="Remove picture">×</button> : <label className="answerImageButton" title="Use a picture"><span>▧</span><input type="file" accept="image/*" onChange={e => loadAnswerImage(i,e.target.files?.[0])}/></label>}</div>)}</div>
           </section>
         </div>
+      </div>}
+      {previewing && <div className="questionPreview">
+        <header><div><b>Participant preview</b><span>Question {activeQuestion + 1} of {questions.length}</span></div><button onClick={() => setPreviewing(false)}>× Close preview</button></header>
+        <section className="previewStage">
+          <div className="previewTimer">20</div>
+          <h2>{currentQuestion.text || "Untitled question"}</h2>
+          {currentQuestion.image && <img className="previewQuestionImage" src={currentQuestion.image} alt="Question"/>}
+          <div className="previewAnswers">{answers.map((answer,index)=><button className={answer.color} key={answer.text}>{currentQuestion.answerImages[index] && <span className="previewAnswerImage"><img style={{transform:`scale(${currentQuestion.answerScales[index]/100})`}} src={currentQuestion.answerImages[index] || ""} alt=""/></span>}<b>{answer.icon}</b>{currentQuestion.answers[index] && <strong>{currentQuestion.answers[index]}</strong>}</button>)}</div>
+          <p>Choose the best answer</p>
+        </section>
       </div>}
       {lobby && <div className="lobby">
         <header><span className="brand">QuizPop!</span><button onClick={() => setLobby(false)}>Exit game</button></header>
