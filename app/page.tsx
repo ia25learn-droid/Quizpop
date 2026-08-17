@@ -10,6 +10,7 @@ const answers = [
 ];
 
 type Avatar = { character: string; skin: string; hair: string; outfit: string; accessory: string };
+type LiveQuestion = { text: string; image: string | null; answers: string[]; answerImages: (string | null)[]; answerScales: number[] };
 const outfitIcons: Record<string,string> = { dress:"🍓", gown:"👗", suit:"👔", tuxedo:"🤵", dinosaur:"🦖", wedding:"💍", cowboy:"🤠", astronaut:"🚀", wizard:"🪄" };
 const sunnyOutfitImages: Record<string,string> = { dress:"/sunny-transparent.png?v=4", gown:"/sunny-gown.png?v=4", suit:"/sunny-suit.png?v=4", tuxedo:"/sunny-tuxedo.png?v=4", dinosaur:"/sunny-dinosaur.png?v=4", wedding:"/sunny-wedding.png?v=4", cowboy:"/sunny-cowboy.png?v=4", astronaut:"/sunny-astronaut.png?v=4", wizard:"/sunny-wizard.png?v=4" };
 const avatarChoices = {
@@ -43,6 +44,10 @@ export default function Home() {
   const [roomError, setRoomError] = useState("");
   const [joiningRoom, setJoiningRoom] = useState(false);
   const [gameStarted, setGameStarted] = useState(false);
+  const [liveQuestion, setLiveQuestion] = useState<LiveQuestion | null>(null);
+  const [timeLeft, setTimeLeft] = useState(20);
+  const [participantAnswer, setParticipantAnswer] = useState<number | null>(null);
+  const [liveStartedAt, setLiveStartedAt] = useState<number | null>(null);
   const [playerId] = useState(() => crypto.randomUUID());
   const [selected, setSelected] = useState<number | null>(null);
   const [hostMode, setHostMode] = useState(false);
@@ -87,16 +92,22 @@ export default function Home() {
       const response = await fetch(`/.netlify/functions/room?code=${code}&view=status`, { cache: "no-store" });
       if (!response.ok) return;
       const data = await response.json();
-      if (data.status === "started") setGameStarted(true);
+      if (data.status === "started") { setGameStarted(true); setLiveQuestion(data.question || null); setLiveStartedAt(Number(data.startedAt) || Date.now()); }
     };
     refresh();
     const timer = window.setInterval(refresh, 4000);
     return () => window.clearInterval(timer);
   }, [participantLobby, code]);
 
+  useEffect(() => {
+    if (!participantLobby || !gameStarted || !liveStartedAt) return;
+    const updateTimer = () => setTimeLeft(Math.max(0, 20 - Math.floor((Date.now() - liveStartedAt) / 1000)));
+    updateTimer(); const timer = window.setInterval(updateTimer, 250); return () => window.clearInterval(timer);
+  }, [participantLobby, gameStarted, liveStartedAt]);
+
   async function openHostLobby() {
     setRoomError("");
-    const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create", code: roomCode }) });
+    const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create", code: roomCode, questions }) });
     if (!response.ok && location.hostname !== "localhost") { setRoomError("Could not create the live room. Please try again."); return; }
     setHostMode(false); setParticipants([]); setLobby(true);
   }
@@ -234,7 +245,7 @@ export default function Home() {
         <div className="avatarCreator"><div className="avatarPreview sunnyPreview"><AvatarView avatar={avatar} size="large"/><span>Yuzu, your QuizPop player</span></div><div className="avatarControls">{Object.entries(avatarChoices).filter(([category]) => category === "outfit").map(([category,options]) => <fieldset key={category} className="characterGalleryField"><legend>Choose character</legend><div className="sunnyCharacterChoices">{options.map(option => <button type="button" key={option.id} title={option.label} aria-label={`character: ${option.label}`} className={`sunnyCharacterChoice ${avatar.outfit === option.id ? "selected" : ""}`} onClick={() => setAvatar(current => ({...current,outfit:option.id}))}><img src={sunnyOutfitImages[option.id]} alt=""/><small><span>{outfitIcons[option.id]}</span>{option.label}</small></button>)}</div></fieldset>)}</div></div>
         <input autoFocus value={nickname} onChange={e => setNickname(e.target.value.slice(0,24))} placeholder="Your nickname" aria-label="Your nickname"/>{roomError && <p className="roomError">{roomError}</p>}<button type="submit" disabled={!nickname.trim() || joiningRoom}>{joiningRoom ? "Joining…" : "Enter lobby →"}</button><small onClick={() => setJoined(false)}>Cancel</small>
       </form></div>}
-      {participantLobby && <div className="participantLobby"><div className="participantTop"><span className="brand">QuizPop!</span><span>Room {code}</span></div><div className="waitingCard"><AvatarView avatar={avatar} size="large"/><p>{gameStarted ? "GAME STARTED" : "YOU'RE IN"}</p><h2>{nickname}</h2>{!gameStarted && <div className="waitingDots"><i/><i/><i/></div>}<h3>{gameStarted ? "Look at the host’s screen!" : "Waiting for the host to start…"}</h3><small>{gameStarted ? "Your first question is coming up" : "Keep this screen open"}</small><button onClick={leaveParticipantRoom}>Leave room</button></div></div>}
+      {participantLobby && <div className="participantLobby"><div className="participantTop"><span className="brand">QuizPop!</span><span>Room {code}</span></div>{gameStarted && liveQuestion ? <div className="participantQuestion"><div className={`phoneTimer ${timeLeft <= 5 ? "urgent" : ""}`}>{timeLeft}</div><h2>{liveQuestion.text}</h2>{liveQuestion.image && <img className="phoneQuestionImage" src={liveQuestion.image} alt="Question"/>}<div className="phoneAnswers">{answers.map((answer,index) => <button disabled={timeLeft === 0 || participantAnswer !== null} onClick={() => setParticipantAnswer(index)} className={`${answer.color} ${participantAnswer === index ? "picked" : ""}`} key={index}>{liveQuestion.answerImages[index] && <img style={{transform:`scale(${liveQuestion.answerScales[index] / 100})`}} src={liveQuestion.answerImages[index] || ""} alt=""/>}<b>{answer.icon}</b><span>{liveQuestion.answers[index] || `Option ${index + 1}`}</span></button>)}</div><p>{participantAnswer !== null ? "Answer locked in!" : timeLeft ? "Choose your answer" : "Time’s up!"}</p></div> : <div className="waitingCard"><AvatarView avatar={avatar} size="large"/><p>YOU&apos;RE IN</p><h2>{nickname}</h2><div className="waitingDots"><i/><i/><i/></div><h3>Waiting for the host to start…</h3><small>Keep this screen open</small><button onClick={leaveParticipantRoom}>Leave room</button></div>}</div>}
       {hostMode && <div className="studio">
         <header><button className="close" onClick={() => setHostMode(false)}>← Back</button><div className="studioBrand">QuizPop! <span>Quiz editor</span></div><button className="previewBtn" onClick={() => setPreviewing(true)}>◉ Preview</button><button className="present" onClick={postGame}>Post game</button></header>
         <div className="studioBody">
