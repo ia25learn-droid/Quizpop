@@ -52,6 +52,7 @@ export default function Home() {
   const [participantQuestionIndex, setParticipantQuestionIndex] = useState(-1);
   const [hostPlaying, setHostPlaying] = useState(false);
   const [hostTimeLeft, setHostTimeLeft] = useState(20);
+  const [gameFinished, setGameFinished] = useState(false);
   const [hostResults, setHostResults] = useState<{playerId:string;nickname:string;avatar:Avatar;correct:boolean;elapsedMs:number;score:number;answered:boolean}[]>([]);
   const [playerId] = useState(() => crypto.randomUUID());
   const [selected, setSelected] = useState<number | null>(null);
@@ -158,14 +159,14 @@ export default function Home() {
   async function startLiveGame() {
     const requestedAt = Date.now();
     const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "start", code: roomCode }) });
-    if (response.ok) { const data = await response.json(); setServerClockOffset(Number(data.serverNow) - ((requestedAt + Date.now()) / 2)); setLiveStartedAt(Number(data.startedAt) || Date.now()); setHostTimeLeft(20); setActiveQuestion(0); setHostPlaying(true); setLobby(false); setPreviewing(true); }
+    if (response.ok) { const data = await response.json(); setServerClockOffset(Number(data.serverNow) - ((requestedAt + Date.now()) / 2)); setLiveStartedAt(Number(data.startedAt) || Date.now()); setHostTimeLeft(20); setActiveQuestion(0); setGameFinished(false); setHostPlaying(true); setLobby(false); setPreviewing(true); }
   }
 
   async function startNextQuestion() {
     const requestedAt = Date.now();
     const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "next", code: roomCode }) });
     if (!response.ok) return; const data = await response.json();
-    if (data.finished) { setHostPlaying(false); return; }
+    if (data.finished) { setGameFinished(true); return; }
     setServerClockOffset(Number(data.serverNow) - ((requestedAt + Date.now()) / 2)); setLiveStartedAt(Number(data.startedAt)); setHostTimeLeft(20); setActiveQuestion(Number(data.questionIndex));
   }
 
@@ -303,7 +304,7 @@ export default function Home() {
           <h2>{currentQuestion.text || "Untitled question"}</h2>
           {currentQuestion.image && <img className="previewQuestionImage" src={currentQuestion.image} alt="Question"/>}
           <div className="previewAnswers">{answers.map((answer,index)=><button className={answer.color} key={answer.text}>{currentQuestion.answerImages[index] && <span className="previewAnswerImage"><img style={{transform:`scale(${currentQuestion.answerScales[index]/100})`}} src={currentQuestion.answerImages[index] || ""} alt=""/></span>}<b>{answer.icon}</b>{currentQuestion.answers[index] && <strong>{currentQuestion.answers[index]}</strong>}</button>)}</div>
-          {hostPlaying && hostTimeLeft === 0 ? <div className="hostRanking"><h3>Leaderboard · Total points</h3>{hostResults.length ? <ol>{hostResults.map((result,index)=><li className={result.correct ? "correct" : "wrong"} key={result.playerId}><b>{index + 1}</b><AvatarView avatar={result.avatar} size="small"/><span><strong>{result.nickname}</strong><small>{result.correct ? `Correct · ${(result.elapsedMs/1000).toFixed(2)}s` : result.answered ? "Wrong answer" : "No answer"}</small></span><em>{result.score} pts</em></li>)}</ol> : <p>No players are in this room.</p>}<button className="nextQuestionBtn" onClick={startNextQuestion}>{activeQuestion + 1 < questions.length ? "Next question →" : "Finish game"}</button></div> : <p>{hostPlaying ? `${hostResults.filter(result => result.answered).length} of ${participants.length} answered` : "Choose the best answer"}</p>}
+          {hostPlaying && hostTimeLeft === 0 ? <div className={`hostRanking ${gameFinished ? "finalLeaderboard" : ""}`}><h3>{gameFinished ? "🏆 Final winners" : "Leaderboard · Total points"}</h3>{hostResults.length ? <ol>{(gameFinished ? hostResults.slice(0,3) : hostResults).map((result,index)=><li className={result.correct ? "correct" : "wrong"} key={result.playerId}><b>{gameFinished ? ["🥇","🥈","🥉"][index] : index + 1}</b><AvatarView avatar={result.avatar} size="small"/><span><strong>{result.nickname}</strong><small>{gameFinished ? `Top ${index + 1} winner` : result.correct ? `Correct · ${(result.elapsedMs/1000).toFixed(2)}s` : result.answered ? "Wrong answer" : "No answer"}</small></span><em>{result.score} pts</em></li>)}</ol> : <p>No players are in this room.</p>}<button className="nextQuestionBtn" onClick={gameFinished ? () => {setPreviewing(false);setHostPlaying(false);setGameFinished(false)} : startNextQuestion}>{gameFinished ? "Close leaderboard" : activeQuestion + 1 < questions.length ? "Next question →" : "Finish game"}</button></div> : <p>{hostPlaying ? `${hostResults.filter(result => result.answered).length} of ${participants.length} answered` : "Choose the best answer"}</p>}
         </section>
       </div>}
       {lobby && <div className="lobby">
