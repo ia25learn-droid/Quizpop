@@ -10,7 +10,7 @@ const answers = [
 ];
 
 type Avatar = { character: string; skin: string; hair: string; outfit: string; accessory: string };
-type LiveQuestion = { text: string; image: string | null; answers: string[]; answerImages: (string | null)[]; answerScales: number[] };
+type LiveQuestion = { text: string; image: string | null; answers: string[]; answerImages: (string | null)[]; answerScales: number[]; correct?: number };
 const outfitIcons: Record<string,string> = { dress:"🍓", gown:"👗", suit:"👔", tuxedo:"🤵", dinosaur:"🦖", wedding:"💍", cowboy:"🤠", astronaut:"🚀", wizard:"🪄" };
 const sunnyOutfitImages: Record<string,string> = { dress:"/sunny-transparent.png?v=4", gown:"/sunny-gown.png?v=4", suit:"/sunny-suit.png?v=4", tuxedo:"/sunny-tuxedo.png?v=4", dinosaur:"/sunny-dinosaur.png?v=4", wedding:"/sunny-wedding.png?v=4", cowboy:"/sunny-cowboy.png?v=4", astronaut:"/sunny-astronaut.png?v=4", wizard:"/sunny-wizard.png?v=4" };
 const avatarChoices = {
@@ -50,6 +50,7 @@ export default function Home() {
   const [liveStartedAt, setLiveStartedAt] = useState<number | null>(null);
   const [hostPlaying, setHostPlaying] = useState(false);
   const [hostTimeLeft, setHostTimeLeft] = useState(20);
+  const [hostResults, setHostResults] = useState<{playerId:string;nickname:string;avatar:Avatar;correct:boolean;elapsedMs:number;score:number}[]>([]);
   const [playerId] = useState(() => crypto.randomUUID());
   const [selected, setSelected] = useState<number | null>(null);
   const [hostMode, setHostMode] = useState(false);
@@ -97,7 +98,7 @@ export default function Home() {
       if (data.status === "started") { setGameStarted(true); setLiveQuestion(data.question || null); setLiveStartedAt(Number(data.startedAt) || Date.now()); }
     };
     refresh();
-    const timer = window.setInterval(refresh, 4000);
+    const timer = window.setInterval(refresh, 1000);
     return () => window.clearInterval(timer);
   }, [participantLobby, code]);
 
@@ -112,6 +113,16 @@ export default function Home() {
     const updateTimer = () => setHostTimeLeft(Math.max(0, 20 - Math.floor((Date.now() - liveStartedAt) / 1000)));
     updateTimer(); const timer = window.setInterval(updateTimer, 250); return () => window.clearInterval(timer);
   }, [hostPlaying, liveStartedAt]);
+
+  useEffect(() => {
+    if (!hostPlaying) return;
+    const refreshResults = async () => {
+      const response = await fetch(`/.netlify/functions/room?code=${roomCode}`, { cache: "no-store" }); if (!response.ok) return;
+      const data = await response.json(); const players = new Map((data.participants || []).map((player:{id:string;nickname:string;avatar:Avatar}) => [player.id, player]));
+      setHostResults((data.responses || []).map((item:{playerId:string;correct:boolean;elapsedMs:number;score:number}) => { const player = players.get(item.playerId) as {nickname:string;avatar:Avatar}|undefined; return {...item,nickname:player?.nickname || "Player",avatar:player?.avatar || avatar}; }).sort((a:{correct:boolean;elapsedMs:number},b:{correct:boolean;elapsedMs:number}) => Number(b.correct)-Number(a.correct) || a.elapsedMs-b.elapsedMs));
+    };
+    refreshResults(); const timer = window.setInterval(refreshResults, 1000); return () => window.clearInterval(timer);
+  }, [hostPlaying, roomCode]);
 
   async function openHostLobby() {
     setRoomError("");
@@ -144,6 +155,11 @@ export default function Home() {
   async function startLiveGame() {
     const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "start", code: roomCode }) });
     if (response.ok) { const data = await response.json(); setLiveStartedAt(Number(data.startedAt) || Date.now()); setHostTimeLeft(20); setHostPlaying(true); setLobby(false); setPreviewing(true); }
+  }
+
+  async function submitParticipantAnswer(answerIndex: number) {
+    if (participantAnswer !== null || timeLeft === 0) return; setParticipantAnswer(answerIndex);
+    await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "answer", code, playerId, answer: answerIndex }) }).catch(() => undefined);
   }
 
   async function leaveParticipantRoom() {
@@ -253,7 +269,7 @@ export default function Home() {
         <div className="avatarCreator"><div className="avatarPreview sunnyPreview"><AvatarView avatar={avatar} size="large"/><span>Yuzu, your QuizPop player</span></div><div className="avatarControls">{Object.entries(avatarChoices).filter(([category]) => category === "outfit").map(([category,options]) => <fieldset key={category} className="characterGalleryField"><legend>Choose character</legend><div className="sunnyCharacterChoices">{options.map(option => <button type="button" key={option.id} title={option.label} aria-label={`character: ${option.label}`} className={`sunnyCharacterChoice ${avatar.outfit === option.id ? "selected" : ""}`} onClick={() => setAvatar(current => ({...current,outfit:option.id}))}><img src={sunnyOutfitImages[option.id]} alt=""/><small><span>{outfitIcons[option.id]}</span>{option.label}</small></button>)}</div></fieldset>)}</div></div>
         <input autoFocus value={nickname} onChange={e => setNickname(e.target.value.slice(0,24))} placeholder="Your nickname" aria-label="Your nickname"/>{roomError && <p className="roomError">{roomError}</p>}<button type="submit" disabled={!nickname.trim() || joiningRoom}>{joiningRoom ? "Joining…" : "Enter lobby →"}</button><small onClick={() => setJoined(false)}>Cancel</small>
       </form></div>}
-      {participantLobby && <div className="participantLobby"><div className="participantTop"><span className="brand">QuizPop!</span><span>Room {code}</span></div>{gameStarted && liveQuestion ? <div className="participantQuestion phoneChoiceOnly"><div className="phoneAnswers">{answers.map((answer,index) => <button aria-label={`Choose ${answer.color} ${answer.icon}`} disabled={timeLeft === 0 || participantAnswer !== null} onClick={() => setParticipantAnswer(index)} className={`${answer.color} ${participantAnswer === index ? "picked" : ""}`} key={index}><b>{answer.icon}</b></button>)}</div><p>{participantAnswer !== null ? "Answer locked in!" : timeLeft ? "Choose a colour and shape" : "Time’s up!"}</p></div> : <div className="waitingCard"><AvatarView avatar={avatar} size="large"/><p>YOU&apos;RE IN</p><h2>{nickname}</h2><div className="waitingDots"><i/><i/><i/></div><h3>Waiting for the host to start…</h3><small>Keep this screen open</small><button onClick={leaveParticipantRoom}>Leave room</button></div>}</div>}
+      {participantLobby && <div className="participantLobby"><div className="participantTop"><span className="brand">QuizPop!</span><span>Room {code}</span></div>{gameStarted && liveQuestion ? <div className="participantQuestion phoneChoiceOnly"><div className={`phoneTimer ${timeLeft <= 5 ? "urgent" : ""}`}>{timeLeft}</div><div className="phoneAnswers">{answers.map((answer,index) => <button aria-label={`Choose ${answer.color} ${answer.icon}`} disabled={timeLeft === 0 || participantAnswer !== null} onClick={() => submitParticipantAnswer(index)} className={`${answer.color} ${participantAnswer === index ? "picked" : ""} ${timeLeft === 0 && liveQuestion.correct === index ? "revealedCorrect" : ""} ${timeLeft === 0 && participantAnswer === index && liveQuestion.correct !== index ? "revealedWrong" : ""}`} key={index}><b>{answer.icon}</b></button>)}</div><p className={timeLeft === 0 ? participantAnswer === liveQuestion.correct ? "resultCorrect" : "resultWrong" : ""}>{timeLeft > 0 ? participantAnswer !== null ? "Answer locked in!" : "Choose a colour and shape" : liveQuestion.correct === undefined ? "Checking the answer…" : participantAnswer === liveQuestion.correct ? "Correct! Great answer!" : participantAnswer === null ? "Time’s up — no answer submitted" : "Not quite — that answer was wrong"}</p></div> : <div className="waitingCard"><AvatarView avatar={avatar} size="large"/><p>YOU&apos;RE IN</p><h2>{nickname}</h2><div className="waitingDots"><i/><i/><i/></div><h3>Waiting for the host to start…</h3><small>Keep this screen open</small><button onClick={leaveParticipantRoom}>Leave room</button></div>}</div>}
       {hostMode && <div className="studio">
         <header><button className="close" onClick={() => setHostMode(false)}>← Back</button><div className="studioBrand">QuizPop! <span>Quiz editor</span></div><button className="previewBtn" onClick={() => setPreviewing(true)}>◉ Preview</button><button className="present" onClick={postGame}>Post game</button></header>
         <div className="studioBody">
@@ -275,7 +291,7 @@ export default function Home() {
           <h2>{currentQuestion.text || "Untitled question"}</h2>
           {currentQuestion.image && <img className="previewQuestionImage" src={currentQuestion.image} alt="Question"/>}
           <div className="previewAnswers">{answers.map((answer,index)=><button className={answer.color} key={answer.text}>{currentQuestion.answerImages[index] && <span className="previewAnswerImage"><img style={{transform:`scale(${currentQuestion.answerScales[index]/100})`}} src={currentQuestion.answerImages[index] || ""} alt=""/></span>}<b>{answer.icon}</b>{currentQuestion.answers[index] && <strong>{currentQuestion.answers[index]}</strong>}</button>)}</div>
-          <p>Choose the best answer</p>
+          {hostPlaying && hostTimeLeft === 0 ? <div className="hostRanking"><h3>Fastest correct answers</h3>{hostResults.length ? <ol>{hostResults.map((result,index)=><li className={result.correct ? "correct" : "wrong"} key={result.playerId}><b>{index + 1}</b><AvatarView avatar={result.avatar} size="small"/><span><strong>{result.nickname}</strong><small>{result.correct ? `Correct · ${(result.elapsedMs/1000).toFixed(2)}s` : "Wrong answer"}</small></span><em>{result.score} pts</em></li>)}</ol> : <p>No answers were submitted.</p>}</div> : <p>{hostPlaying ? `${hostResults.length} of ${participants.length} answered` : "Choose the best answer"}</p>}
         </section>
       </div>}
       {lobby && <div className="lobby">

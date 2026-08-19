@@ -8,7 +8,8 @@ const choices = { character: ["golden"], skin: ["warm"], hair: ["short"], outfit
 type Avatar = { character: string; skin: string; hair: string; outfit: string; accessory: string };
 type Player = { id: string; nickname: string; avatar: Avatar; joinedAt: number };
 type Question = { text: string; image: string | null; answers: string[]; answerImages: (string | null)[]; answerScales: number[]; correct: number };
-type Room = { code: string; status: "waiting" | "started"; createdAt: number; startedAt?: number; questionIndex: number; questions: Question[]; participants: Player[] };
+type AnswerRecord = { playerId: string; questionIndex: number; answer: number; correct: boolean; elapsedMs: number; score: number; answeredAt: number };
+type Room = { code: string; status: "waiting" | "started"; createdAt: number; startedAt?: number; questionIndex: number; questions: Question[]; participants: Player[]; responses: AnswerRecord[] };
 
 const safeAvatar = (value: unknown): Avatar => {
   const avatar = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
@@ -37,7 +38,8 @@ export default async (request: Request) => {
     const room = result.data as Room;
     if (url.searchParams.get("view") === "status") {
       const question = room.questions?.[room.questionIndex || 0];
-      return reply({ code, status: room.status, startedAt: room.startedAt, duration: 20, questionIndex: room.questionIndex || 0, question: question ? { text: question.text, image: question.image, answers: question.answers, answerImages: question.answerImages, answerScales: question.answerScales } : null });
+      const elapsedMs = room.startedAt ? Date.now() - room.startedAt : 0;
+      return reply({ code, status: room.status, startedAt: room.startedAt, duration: 20, questionIndex: room.questionIndex || 0, question: question ? { text: question.text, image: question.image, answers: question.answers, answerImages: question.answerImages, answerScales: question.answerScales, ...(elapsedMs >= 20000 ? { correct: question.correct } : {}) } : null });
     }
     return reply(room);
   }
@@ -48,7 +50,7 @@ export default async (request: Request) => {
   if (!code) return reply({ error: "Room code required" }, 400);
 
   if (body.action === "create") {
-    const room: Room = { code, status: "waiting", createdAt: Date.now(), questionIndex: 0, questions: safeQuestions(body.questions), participants: [] };
+    const room: Room = { code, status: "waiting", createdAt: Date.now(), questionIndex: 0, questions: safeQuestions(body.questions), participants: [], responses: [] };
     await store.setJSON(`${code}/room`, room);
     return reply(room);
   }
@@ -72,6 +74,20 @@ export default async (request: Request) => {
     if (body.action === "leave") {
       const participants = room.participants.filter(player => player.id !== String(body.playerId || ""));
       try { await store.setJSON(`${code}/room`, { ...room, participants }, { onlyIfMatch: result.etag }); return reply({ ok: true }); } catch { continue; }
+    }
+
+    if (body.action === "answer") {
+      const playerId = String(body.playerId || "").replace(/[^a-zA-Z0-9-]/g, "").slice(0, 64);
+      const answer = Number(body.answer);
+      const questionIndex = room.questionIndex || 0;
+      const question = room.questions?.[questionIndex];
+      if (room.status !== "started" || !room.startedAt || !question) return reply({ error: "Question is not active" }, 409);
+      if (!room.participants.some(player => player.id === playerId) || !Number.isInteger(answer) || answer < 0 || answer > 3) return reply({ error: "Invalid answer" }, 400);
+      const existing = (room.responses || []).find(item => item.playerId === playerId && item.questionIndex === questionIndex);
+      if (existing) return reply({ ok: true, accepted: false });
+      const answeredAt = Date.now(); const elapsedMs = Math.min(20000, Math.max(0, answeredAt - room.startedAt)); const correct = answer === question.correct;
+      const record: AnswerRecord = { playerId, questionIndex, answer, correct, elapsedMs, score: correct ? 1000 + Math.round((20000 - elapsedMs) / 20) : 0, answeredAt };
+      try { await store.setJSON(`${code}/room`, { ...room, responses: [...(room.responses || []), record] }, { onlyIfMatch: result.etag }); return reply({ ok: true, accepted: true }); } catch { continue; }
     }
 
     if (body.action === "start") {
