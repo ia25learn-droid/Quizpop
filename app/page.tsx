@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const answers = [
   { icon: "▲", text: "Venus", color: "red" },
@@ -53,6 +53,8 @@ export default function Home() {
   const [hostPlaying, setHostPlaying] = useState(false);
   const [hostTimeLeft, setHostTimeLeft] = useState(20);
   const [gameFinished, setGameFinished] = useState(false);
+  const [podiumStage, setPodiumStage] = useState(0);
+  const applauseAudio = useRef<AudioContext | null>(null);
   const [hostResults, setHostResults] = useState<{playerId:string;nickname:string;avatar:Avatar;correct:boolean;elapsedMs:number;score:number;answered:boolean}[]>([]);
   const [playerId] = useState(() => crypto.randomUUID());
   const [selected, setSelected] = useState<number | null>(null);
@@ -128,6 +130,16 @@ export default function Home() {
     refreshResults(); const timer = window.setInterval(refreshResults, 1000); return () => window.clearInterval(timer);
   }, [hostPlaying, roomCode]);
 
+  useEffect(() => {
+    if (!gameFinished) { setPodiumStage(0); return; }
+    setPodiumStage(1);
+    const silver = window.setTimeout(() => setPodiumStage(2), 1800);
+    const gold = window.setTimeout(() => setPodiumStage(3), 3800);
+    return () => { window.clearTimeout(silver); window.clearTimeout(gold); };
+  }, [gameFinished]);
+
+  useEffect(() => { if (podiumStage === 3) playApplause(); }, [podiumStage]);
+
   async function openHostLobby() {
     setRoomError("");
     const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create", code: roomCode, questions }) });
@@ -163,11 +175,19 @@ export default function Home() {
   }
 
   async function startNextQuestion() {
+    if (activeQuestion + 1 >= questions.length && !applauseAudio.current) { applauseAudio.current = new AudioContext(); void applauseAudio.current.resume(); }
     const requestedAt = Date.now();
     const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "next", code: roomCode }) });
     if (!response.ok) return; const data = await response.json();
     if (data.finished) { setGameFinished(true); return; }
     setServerClockOffset(Number(data.serverNow) - ((requestedAt + Date.now()) / 2)); setLiveStartedAt(Number(data.startedAt)); setHostTimeLeft(20); setActiveQuestion(Number(data.questionIndex));
+  }
+
+  function playApplause() {
+    const context = applauseAudio.current || new AudioContext(); applauseAudio.current = context; void context.resume();
+    const duration = 4; const buffer = context.createBuffer(1, context.sampleRate * duration, context.sampleRate); const channel = buffer.getChannelData(0);
+    for (let i=0;i<channel.length;i+=1) { const t=i/context.sampleRate; const wave=Math.pow(Math.max(0,Math.sin(t*32)+Math.sin(t*47)*.55),3); channel[i]=(Math.random()*2-1)*(.12+wave*.42)*(1-t/duration*.35); }
+    const source=context.createBufferSource(); const highpass=context.createBiquadFilter(); const gain=context.createGain(); source.buffer=buffer; highpass.type="highpass"; highpass.frequency.value=650; gain.gain.value=.52; source.connect(highpass).connect(gain).connect(context.destination); source.start();
   }
 
   async function submitParticipantAnswer(answerIndex: number) {
@@ -304,7 +324,7 @@ export default function Home() {
           <h2>{currentQuestion.text || "Untitled question"}</h2>
           {currentQuestion.image && <img className="previewQuestionImage" src={currentQuestion.image} alt="Question"/>}
           <div className="previewAnswers">{answers.map((answer,index)=><button className={answer.color} key={answer.text}>{currentQuestion.answerImages[index] && <span className="previewAnswerImage"><img style={{transform:`scale(${currentQuestion.answerScales[index]/100})`}} src={currentQuestion.answerImages[index] || ""} alt=""/></span>}<b>{answer.icon}</b>{currentQuestion.answers[index] && <strong>{currentQuestion.answers[index]}</strong>}</button>)}</div>
-          {hostPlaying && hostTimeLeft === 0 ? <div className={`hostRanking ${gameFinished ? "finalLeaderboard" : ""}`}><h3>{gameFinished ? "🏆 Final winners" : "Leaderboard · Total points"}</h3>{hostResults.length ? <ol>{(gameFinished ? hostResults.slice(0,3) : hostResults).map((result,index)=><li className={result.correct ? "correct" : "wrong"} key={result.playerId}><b>{gameFinished ? ["🥇","🥈","🥉"][index] : index + 1}</b><AvatarView avatar={result.avatar} size="small"/><span><strong>{result.nickname}</strong><small>{gameFinished ? `Top ${index + 1} winner` : result.correct ? `Correct · ${(result.elapsedMs/1000).toFixed(2)}s` : result.answered ? "Wrong answer" : "No answer"}</small></span><em>{result.score} pts</em></li>)}</ol> : <p>No players are in this room.</p>}<button className="nextQuestionBtn" onClick={gameFinished ? () => {setPreviewing(false);setHostPlaying(false);setGameFinished(false)} : startNextQuestion}>{gameFinished ? "Close leaderboard" : activeQuestion + 1 < questions.length ? "Next question →" : "Finish game"}</button></div> : <p>{hostPlaying ? `${hostResults.filter(result => result.answered).length} of ${participants.length} answered` : "Choose the best answer"}</p>}
+          {hostPlaying && hostTimeLeft === 0 ? gameFinished ? <div className="podiumReveal"><span className="championEyebrow">QUIZPOP CHAMPIONS</span><h3>{podiumStage < 3 ? "And the winners are…" : "Congratulations!"}</h3><div className="podiumScene">{hostResults[2] && podiumStage >= 1 && <div className="podiumWinner bronzeWinner"><div className="winnerAvatar"><AvatarView avatar={hostResults[2].avatar} size="medium"/></div><strong>{hostResults[2].nickname}</strong><em>{hostResults[2].score} pts</em><div className="podiumBlock"><span>3</span></div></div>}{hostResults[0] && podiumStage >= 3 && <div className="podiumWinner goldWinner"><div className="winnerCrown">♛</div><div className="winnerAvatar"><AvatarView avatar={hostResults[0].avatar} size="medium"/></div><strong>{hostResults[0].nickname}</strong><em>{hostResults[0].score} pts</em><div className="podiumBlock"><span>1</span></div></div>}{hostResults[1] && podiumStage >= 2 && <div className="podiumWinner silverWinner"><div className="winnerAvatar"><AvatarView avatar={hostResults[1].avatar} size="medium"/></div><strong>{hostResults[1].nickname}</strong><em>{hostResults[1].score} pts</em><div className="podiumBlock"><span>2</span></div></div>}</div><button className="nextQuestionBtn" onClick={() => {setPreviewing(false);setHostPlaying(false);setGameFinished(false)}}>Close leaderboard</button></div> : <div className="hostRanking"><h3>Leaderboard · Total points</h3>{hostResults.length ? <ol>{hostResults.map((result,index)=><li className={result.correct ? "correct" : "wrong"} key={result.playerId}><b>{index + 1}</b><AvatarView avatar={result.avatar} size="small"/><span><strong>{result.nickname}</strong><small>{result.correct ? `Correct · ${(result.elapsedMs/1000).toFixed(2)}s` : result.answered ? "Wrong answer" : "No answer"}</small></span><em>{result.score} pts</em></li>)}</ol> : <p>No players are in this room.</p>}<button className="nextQuestionBtn" onClick={startNextQuestion}>{activeQuestion + 1 < questions.length ? "Next question →" : "Finish game"}</button></div> : <p>{hostPlaying ? `${hostResults.filter(result => result.answered).length} of ${participants.length} answered` : "Choose the best answer"}</p>}
         </section>
       </div>}
       {lobby && <div className="lobby">
