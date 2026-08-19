@@ -75,7 +75,8 @@ export default async (request: Request) => {
     }
 
     if (body.action === "start") {
-      try { await store.setJSON(`${code}/room`, { ...room, status: "started", startedAt: Date.now() }, { onlyIfMatch: result.etag }); return reply({ ok: true, status: "started" }); } catch { continue; }
+      const startedAt = Date.now();
+      try { await store.setJSON(`${code}/room`, { ...room, status: "started", startedAt }, { onlyIfMatch: result.etag }); return reply({ ok: true, status: "started", startedAt }); } catch { continue; }
     }
 
     return reply({ error: "Unknown action" }, 400);
