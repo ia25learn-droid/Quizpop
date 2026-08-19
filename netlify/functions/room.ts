@@ -39,7 +39,7 @@ export default async (request: Request) => {
     if (url.searchParams.get("view") === "status") {
       const question = room.questions?.[room.questionIndex || 0];
       const elapsedMs = room.startedAt ? Date.now() - room.startedAt : 0;
-      return reply({ code, status: room.status, startedAt: room.startedAt, duration: 20, questionIndex: room.questionIndex || 0, question: question ? { text: question.text, image: question.image, answers: question.answers, answerImages: question.answerImages, answerScales: question.answerScales, ...(elapsedMs >= 20000 ? { correct: question.correct } : {}) } : null });
+      return reply({ code, status: room.status, serverNow: Date.now(), startedAt: room.startedAt, duration: 20, questionIndex: room.questionIndex || 0, question: question ? { text: question.text, image: question.image, answers: question.answers, answerImages: question.answerImages, answerScales: question.answerScales, ...(elapsedMs >= 20000 ? { correct: question.correct } : {}) } : null });
     }
     return reply(room);
   }
@@ -92,7 +92,14 @@ export default async (request: Request) => {
 
     if (body.action === "start") {
       const startedAt = Date.now();
-      try { await store.setJSON(`${code}/room`, { ...room, status: "started", startedAt }, { onlyIfMatch: result.etag }); return reply({ ok: true, status: "started", startedAt }); } catch { continue; }
+      try { await store.setJSON(`${code}/room`, { ...room, status: "started", questionIndex: 0, startedAt }, { onlyIfMatch: result.etag }); return reply({ ok: true, status: "started", questionIndex: 0, startedAt, serverNow: Date.now() }); } catch { continue; }
+    }
+
+    if (body.action === "next") {
+      const questionIndex = (room.questionIndex || 0) + 1;
+      if (questionIndex >= room.questions.length) return reply({ ok: true, finished: true });
+      const startedAt = Date.now();
+      try { await store.setJSON(`${code}/room`, { ...room, questionIndex, startedAt }, { onlyIfMatch: result.etag }); return reply({ ok: true, status: "started", questionIndex, startedAt, serverNow: Date.now() }); } catch { continue; }
     }
 
     return reply({ error: "Unknown action" }, 400);
