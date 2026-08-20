@@ -23,6 +23,12 @@ const avatarChoices = {
   accessory: [{id:"none",label:"None"},{id:"hat",label:"Hat"},{id:"crown",label:"Crown"}],
 };
 
+function createRoomCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const values = crypto.getRandomValues(new Uint8Array(6));
+  return Array.from(values, value => alphabet[value % alphabet.length]).join("");
+}
+
 function AvatarView({ avatar, size = "medium" }: { avatar: Avatar; size?: "small" | "medium" | "large" }) {
   if (avatar.character === "golden") {
     const outfitImage = sunnyOutfitImages[avatar.outfit] || sunnyOutfitImages.dress;
@@ -64,6 +70,7 @@ export default function Home() {
   const [lobby, setLobby] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [activeQuestion, setActiveQuestion] = useState(0);
+  const [roomCode, setRoomCode] = useState(() => createRoomCode());
   const [questions, setQuestions] = useState([
     { text: "Which planet is known as the Red Planet?", image: null as string | null, answers: ["Venus", "Mars", "Jupiter", "Saturn"], answerImages: [null, null, null, null] as (string | null)[], answerScales: [100, 100, 100, 100], correct: 1 },
   ]);
@@ -80,7 +87,6 @@ export default function Home() {
   const [saveMessage, setSaveMessage] = useState("");
 
   const currentQuestion = questions[activeQuestion];
-  const roomCode = "7QX9KP";
   const siteOrigin = typeof window === "undefined" ? "" : window.location.origin;
   const configuredOrigin = String(import.meta.env.VITE_PUBLIC_SITE_URL || "").replace(/\/$/, "");
   const isLocalSite = /^(localhost|127\.0\.0\.1)$/i.test(typeof window === "undefined" ? "" : window.location.hostname);
@@ -164,9 +170,10 @@ export default function Home() {
 
   async function openHostLobby() {
     setRoomError("");
-    const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create", code: roomCode, questions }) });
+    const newRoomCode = createRoomCode();
+    const response = await fetch("/.netlify/functions/room", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "create", code: newRoomCode, questions }) });
     if (!response.ok && location.hostname !== "localhost") { setRoomError("Could not create the live room. Please try again."); return; }
-    setHostMode(false); setParticipants([]); setLobby(true);
+    setRoomCode(newRoomCode); setHostMode(false); setParticipants([]); setLobby(true);
   }
 
   async function postGame() {
