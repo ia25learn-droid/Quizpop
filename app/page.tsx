@@ -11,6 +11,8 @@ const answers = [
 
 type Avatar = { character: string; skin: string; hair: string; outfit: string; accessory: string };
 type LiveQuestion = { text: string; image: string | null; answers: string[]; answerImages: (string | null)[]; answerScales: number[]; correct?: number };
+type AccountUser = { id: string; email: string };
+type SavedQuizSummary = { id: string; title: string; updatedAt: number };
 const outfitIcons: Record<string,string> = { dress:"🍓", gown:"👗", suit:"👔", tuxedo:"🤵", dinosaur:"🦖", wedding:"💍", cowboy:"🤠", astronaut:"🚀", wizard:"🪄" };
 const sunnyOutfitImages: Record<string,string> = { dress:"/sunny-transparent.png?v=4", gown:"/sunny-gown.png?v=4", suit:"/sunny-suit.png?v=4", tuxedo:"/sunny-tuxedo.png?v=4", dinosaur:"/sunny-dinosaur.png?v=4", wedding:"/sunny-wedding.png?v=4", cowboy:"/sunny-cowboy.png?v=4", astronaut:"/sunny-astronaut.png?v=4", wizard:"/sunny-wizard.png?v=4" };
 const avatarChoices = {
@@ -65,6 +67,17 @@ export default function Home() {
   const [questions, setQuestions] = useState([
     { text: "Which planet is known as the Red Planet?", image: null as string | null, answers: ["Venus", "Mars", "Jupiter", "Saturn"], answerImages: [null, null, null, null] as (string | null)[], answerScales: [100, 100, 100, 100], correct: 1 },
   ]);
+  const [accountUser, setAccountUser] = useState<AccountUser | null>(null);
+  const [showAuth, setShowAuth] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [savedQuizzes, setSavedQuizzes] = useState<SavedQuizSummary[]>([]);
+  const [savedQuizId, setSavedQuizId] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState("");
 
   const currentQuestion = questions[activeQuestion];
   const roomCode = "7QX9KP";
@@ -81,6 +94,15 @@ export default function Home() {
       setCode(scannedRoom.toUpperCase());
       setJoined(true);
     }
+  }, []);
+
+  useEffect(() => {
+    const token = window.sessionStorage.getItem("quizpop-session");
+    if (!token) return;
+    accountRequest("me").then(async response => {
+      if (!response.ok) { window.sessionStorage.removeItem("quizpop-session"); return; }
+      const data = await response.json(); setAccountUser(data.user);
+    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -244,11 +266,59 @@ export default function Home() {
     setAvatar({ character: pick(avatarChoices.character).id, skin: pick(avatarChoices.skin).id, hair: pick(avatarChoices.hair).id, outfit: pick(avatarChoices.outfit).id, accessory: pick(avatarChoices.accessory).id });
   }
 
+  function accountRequest(action: string, payload: Record<string, unknown> = {}) {
+    const token = window.sessionStorage.getItem("quizpop-session");
+    return fetch("/.netlify/functions/account", { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ action, ...payload }) });
+  }
+
+  async function submitAuth(event: React.FormEvent) {
+    event.preventDefault(); setAuthBusy(true); setAuthError("");
+    try {
+      const response = await accountRequest(authMode, { email: authEmail, password: authPassword });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not access your account");
+      window.sessionStorage.setItem("quizpop-session", data.token); setAccountUser(data.user); setAuthPassword(""); setShowAuth(false);
+    } catch (error) { setAuthError(error instanceof Error && error.message !== "Unexpected end of JSON input" ? error.message : "Account login is available after deploying this update to Netlify."); }
+    finally { setAuthBusy(false); }
+  }
+
+  async function openAccount() {
+    if (!accountUser) { setAuthError(""); setShowAuth(true); return; }
+    try {
+      const response = await accountRequest("list"); const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not load your quizzes");
+      setSavedQuizzes(data.quizzes || []); setShowLibrary(true);
+    } catch (error) { setRoomError(error instanceof Error ? error.message : "Could not load your quizzes"); }
+  }
+
+  async function saveQuizToAccount() {
+    if (!accountUser) { setAuthError("Log in or create an account to save this quiz."); setShowAuth(true); return; }
+    setSaveMessage("Saving…");
+    try {
+      const response = await accountRequest("save", { id: savedQuizId, title: questions[0]?.text.trim() || "Untitled quiz", questions }); const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not save this quiz");
+      setSavedQuizId(data.quiz.id); setSaveMessage("Saved ✓"); window.setTimeout(() => setSaveMessage(""), 2200);
+    } catch (error) { setSaveMessage(""); setRoomError(error instanceof Error ? error.message : "Could not save this quiz"); }
+  }
+
+  async function loadSavedQuiz(id: string) {
+    try {
+      const response = await accountRequest("get", { id }); const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not open this quiz");
+      setQuestions(data.quiz.questions); setActiveQuestion(0); setSavedQuizId(data.quiz.id); setShowLibrary(false); setHostMode(true); setRoomError("");
+    } catch (error) { setRoomError(error instanceof Error ? error.message : "Could not open this quiz"); }
+  }
+
+  async function logoutAccount() {
+    await accountRequest("logout").catch(() => undefined); window.sessionStorage.removeItem("quizpop-session"); setAccountUser(null); setSavedQuizzes([]); setShowLibrary(false); setSavedQuizId(null);
+  }
+
   return (
     <main>
       <nav className="nav">
         <a className="brand" href="#">QuizPop<span>!</span></a>
         <div className="navlinks"><a href="#how-it-works">How it works</a><a href="#features">Features</a></div>
+        <button className="accountBtn" onClick={openAccount}>{accountUser ? `◉ ${accountUser.email.split("@")[0]}` : "Log in"}</button>
         <button className="hostBtn" onClick={() => setHostMode(true)}>Host a game <span>→</span></button>
       </nav>
       <section className="hero">
@@ -302,9 +372,21 @@ export default function Home() {
         <div className="avatarCreator"><div className="avatarPreview sunnyPreview"><AvatarView avatar={avatar} size="large"/><span>Yuzu, your QuizPop player</span></div><div className="avatarControls">{Object.entries(avatarChoices).filter(([category]) => category === "outfit").map(([category,options]) => <fieldset key={category} className="characterGalleryField"><legend>Choose character</legend><div className="sunnyCharacterChoices">{options.map(option => <button type="button" key={option.id} title={option.label} aria-label={`character: ${option.label}`} className={`sunnyCharacterChoice ${avatar.outfit === option.id ? "selected" : ""}`} onClick={() => setAvatar(current => ({...current,outfit:option.id}))}><img src={sunnyOutfitImages[option.id]} alt=""/><small><span>{outfitIcons[option.id]}</span>{option.label}</small></button>)}</div></fieldset>)}</div></div>
         <input autoFocus value={nickname} onChange={e => setNickname(e.target.value.slice(0,24))} placeholder="Your nickname" aria-label="Your nickname"/>{roomError && <p className="roomError">{roomError}</p>}<button type="submit" disabled={!nickname.trim() || joiningRoom}>{joiningRoom ? "Joining…" : "Enter lobby →"}</button><small onClick={() => setJoined(false)}>Cancel</small>
       </form></div>}
+      {showAuth && <div className="modal accountModal" onClick={() => setShowAuth(false)}><form onSubmit={submitAuth} onClick={event => event.stopPropagation()}>
+        <div className="accountIcon">♟</div><h2>{authMode === "login" ? "Welcome back" : "Create your account"}</h2><p>Save your quizzes privately and reopen them whenever you host.</p>
+        <label>Email<input autoFocus type="email" value={authEmail} onChange={event => setAuthEmail(event.target.value)} placeholder="you@example.com" required/></label>
+        <label>Password<input type="password" minLength={8} value={authPassword} onChange={event => setAuthPassword(event.target.value)} placeholder="At least 8 characters" required/></label>
+        {authError && <div className="authError">{authError}</div>}<button type="submit" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "login" ? "Log in" : "Create account"}</button>
+        <button className="authSwitch" type="button" onClick={() => { setAuthMode(mode => mode === "login" ? "signup" : "login"); setAuthError(""); }}>{authMode === "login" ? "New here? Create an account" : "Already have an account? Log in"}</button><small onClick={() => setShowAuth(false)}>Cancel</small>
+      </form></div>}
+      {showLibrary && <div className="modal libraryModal" onClick={() => setShowLibrary(false)}><section className="libraryPanel" onClick={event => event.stopPropagation()}>
+        <div className="libraryHeader"><div><span>YOUR ACCOUNT</span><h2>My quizzes</h2><p>{accountUser?.email}</p></div><button onClick={() => setShowLibrary(false)} aria-label="Close">×</button></div>
+        <div className="quizLibraryList">{savedQuizzes.length ? savedQuizzes.map(quiz => <article className="savedQuizCard" key={quiz.id}><div><b>▦</b><span><strong>{quiz.title}</strong><small>Updated {new Date(quiz.updatedAt).toLocaleDateString()}</small></span></div><button onClick={() => loadSavedQuiz(quiz.id)}>Open →</button></article>) : <div className="emptyLibrary"><b>✎</b><h3>No saved quizzes yet</h3><p>Open the quiz editor, create your questions, then choose Save quiz.</p></div>}</div>
+        <div className="libraryActions"><button onClick={() => { setShowLibrary(false); setSavedQuizId(null); setHostMode(true); }}>＋ Create a quiz</button><button onClick={logoutAccount}>Sign out</button></div>
+      </section></div>}
       {participantLobby && <div className="participantLobby"><div className="participantTop"><span className="brand">QuizPop!</span><span>Room {code}</span></div>{gameStarted && liveQuestion ? <div className="participantQuestion phoneChoiceOnly"><div className={`phoneTimer ${timeLeft <= 5 ? "urgent" : ""}`}>{timeLeft}</div><div className="phoneAnswers">{answers.map((answer,index) => <button aria-label={`Choose ${answer.color} ${answer.icon}`} disabled={timeLeft === 0 || participantAnswer !== null} onClick={() => submitParticipantAnswer(index)} className={`${answer.color} ${participantAnswer === index ? "picked" : ""} ${timeLeft === 0 && liveQuestion.correct === index ? "revealedCorrect" : ""} ${timeLeft === 0 && participantAnswer === index && liveQuestion.correct !== index ? "revealedWrong" : ""}`} key={index}><b>{answer.icon}</b></button>)}</div><p className={timeLeft === 0 ? participantAnswer === liveQuestion.correct ? "resultCorrect" : "resultWrong" : ""}>{timeLeft > 0 ? participantAnswer !== null ? "Answer locked in!" : "Choose a colour and shape" : liveQuestion.correct === undefined ? "Checking the answer…" : participantAnswer === liveQuestion.correct ? "Correct! Great answer!" : participantAnswer === null ? "Time’s up — no answer submitted" : "Not quite — that answer was wrong"}</p></div> : <div className="waitingCard"><AvatarView avatar={avatar} size="large"/><p>YOU&apos;RE IN</p><h2>{nickname}</h2><div className="waitingDots"><i/><i/><i/></div><h3>Waiting for the host to start…</h3><small>Keep this screen open</small><button onClick={leaveParticipantRoom}>Leave room</button></div>}</div>}
       {hostMode && <div className="studio">
-        <header><button className="close" onClick={() => setHostMode(false)}>← Back</button><div className="studioBrand">QuizPop! <span>Quiz editor</span></div><button className="previewBtn" onClick={() => setPreviewing(true)}>◉ Preview</button><button className="present" onClick={postGame}>Post game</button></header>
+        <header><button className="close" onClick={() => setHostMode(false)}>← Back</button><div className="studioBrand">QuizPop! <span>Quiz editor</span></div><button className="saveQuizBtn" onClick={saveQuizToAccount}>{saveMessage || "Save quiz"}</button><button className="previewBtn" onClick={() => setPreviewing(true)}>◉ Preview</button><button className="present" onClick={postGame}>Post game</button></header>
         <div className="studioBody">
           <aside><h3>QUESTIONS</h3>{questions.map((question, index) => <button key={index} onClick={() => setActiveQuestion(index)} className={`thumb ${activeQuestion === index ? "active" : ""}`}><span>{index + 1}</span><i>{question.image ? "▧" : "?"}</i><b>{question.text || "Untitled question"}</b></button>)}<button className="addQ" onClick={addQuestion}>＋ Add question</button><div className="capacity"><b>♟ 0 / 300</b><span>Live player capacity</span></div></aside>
           <section className="editor">
